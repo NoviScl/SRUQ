@@ -27,6 +27,7 @@ def call_api(client, model, prompt_messages, temperature=1.0, max_tokens=100, se
         )
         cost = calc_price(model, message.usage)
         response = message.content[0].text
+        logprobs = None  # Claude API doesn't provide token-level logprobs
     else:   
         response_format = {"type": "json_object"} if json_output else {"type": "text"}
         completion = client.chat.completions.create(
@@ -35,12 +36,15 @@ def call_api(client, model, prompt_messages, temperature=1.0, max_tokens=100, se
             temperature=temperature,
             max_tokens=max_tokens,
             seed=seed,
-            response_format=response_format
+            response_format=response_format,
+            logprobs=True,
+            top_logprobs=1
         )
         cost = calc_price(model, completion.usage)
         response = completion.choices[0].message.content.strip()
+        logprobs = completion.choices[0].logprobs.content
     
-    return response, cost
+    return response, cost, logprobs
 
 def call_api_claude(client, model, prompt_messages, temperature=1.0, max_tokens=100):
     message = client.messages.create(

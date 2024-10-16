@@ -1,0 +1,1 @@
+python3 sruq.py --engine gpt-4o-mini --seed 2024
