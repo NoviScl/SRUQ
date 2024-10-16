@@ -13,6 +13,8 @@ def calc_price(model, usage):
         return (0.0015 * usage.prompt_tokens + 0.002 * usage.completion_tokens) / 1000.0
     if model == "gpt-4o":
         return (0.005 * usage.prompt_tokens + 0.015 * usage.completion_tokens) / 1000.0
+    if model == "gpt-4o-mini":
+        return (0.15 * usage.prompt_tokens + 0.60 * usage.completion_tokens) / 1000000.0
 
 def call_api(client, model, prompt_messages, temperature=1.0, max_tokens=100, seed=2024, json_output=False):
     if "claude" in model:
