@@ -9,7 +9,14 @@ import retry
 import numpy as np
 from tqdm import tqdm 
 from datasets import load_dataset
+import networkx as nx
 
+
+def softmax(x):
+    '''
+    Compute the softmax of a list of numbers.
+    '''
+    return np.exp(x) / np.sum(np.exp(x))
 
 def load_gsm8k(test_size=100):
     '''
@@ -33,6 +40,7 @@ def load_gsm8k(test_size=100):
     
     return train, test
 
+
 def brier_score(accuracy_lst, confidence_lst):
     '''
     Compute the brier score given the list of model predictions, gold answers, and the corresponding confidence scores.
@@ -42,6 +50,7 @@ def brier_score(accuracy_lst, confidence_lst):
     brier_score = sum(squared_errors) / n
     
     return brier_score
+
 
 def expected_calibration_error(accuracy_lst, confidence_lst, n_bins=10):
 
@@ -61,6 +70,18 @@ def expected_calibration_error(accuracy_lst, confidence_lst, n_bins=10):
     
     return ece
 
+
+def pairwise_similarity(solution_a, solution_b, metric="jaccard"):
+    '''
+    Compute the pairwise similarity between two solutions.
+    We can try various metrics to compute the similarity.
+    '''
+    similarity = 0
+    if metric == "jaccard":
+        similarity = len(set(solution_a).intersection(set(solution_b))) / len(set(solution_a).union(set(solution_b)))
+    
+    return similarity
+
 def tokens_to_confidence(logprobs_lst):
     '''
     Given a list of logprobs, calculate the confidence score.
@@ -72,6 +93,7 @@ def tokens_to_confidence(logprobs_lst):
     # Normalize by length
     confidence = confidence ** (1 / len(logprobs))
     return confidence
+
 
 @retry.retry(tries=3, delay=2)
 def logprob_confidence(query, train_set, openai_client, model, temperature, seed, demo_num=8):
@@ -92,8 +114,9 @@ def logprob_confidence(query, train_set, openai_client, model, temperature, seed
     
     return prompt, response, cost, confidence
 
+
 @retry.retry(tries=3, delay=2)
-def ensemble_confidence(query, train_set, openai_client, model, temperature, seed, num_prompts=10, demo_num=8):
+def ensemble_confidence(query, train_set, openai_client, model, temperature, seed, num_prompts=5, demo_num=8):
     '''
     Given a query, generate a response along with the confidence score.
     Try num_prompts different prompts and return the most frequent answer.
@@ -117,23 +140,94 @@ def ensemble_confidence(query, train_set, openai_client, model, temperature, see
     
     return prompt, most_common_response, costs, confidence
 
+
+def graph(solutions, metric="jaccard", centrality="eigenvector"):
+    # Create a similarity matrix (symmetric matrix with pairwise similarity weights)
+    n = len(solutions)
+    similarity_matrix = np.zeros((n, n))
+
+    for i in range(n):
+        for j in range(i, n):
+            if i == j:
+                similarity_matrix[i][j] = 1.0  # Self-similarity is always 1
+            else:
+                similarity = pairwise_similarity(solutions[i], solutions[j], metric)
+                similarity_matrix[i][j] = similarity
+                similarity_matrix[j][i] = similarity  # Ensure symmetry
+
+    # print ("solutions: ", solutions)
+    # print ("similarity matrix: ", similarity_matrix)
+    
+    # Create a graph
+    G = nx.Graph()
+
+    # Add edges with weights based on the similarity matrix
+    for i in range(len(solutions)):
+        for j in range(i + 1, len(solutions)):
+            G.add_edge(solutions[i], solutions[j], weight=similarity_matrix[i, j])
+
+    # Compute centrality
+    if centrality == "eigenvector":
+        centrality = nx.eigenvector_centrality(G, weight='weight')
+    elif centrality == "pagerank":
+        centrality = nx.pagerank(G, weight='weight')
+    
+    # Sum up centrality for identical solutions
+    unique_solutions = {}
+    for solution, score in centrality.items():
+        if solution in unique_solutions:
+            unique_solutions[solution] += score
+        else:
+            unique_solutions[solution] = score
+    
+    # Normalize the confidence scores
+    total_score = sum(unique_solutions.values())
+    normalized_centrality = {sol: score / total_score for sol, score in unique_solutions.items()}
+    
+    # Update the centrality dictionary with normalized scores
+    centrality = normalized_centrality
+
+    # # Print the centrality of each solution
+    # print("Centrality (Confidence Estimation):")
+    # for solution, score in centrality.items():
+    #     print(f"{solution}: {score:.4f}")
+
+    # Find the most confident solution (highest centrality) and its confidence
+    most_confident_solution = max(centrality, key=centrality.get)
+    confidence = centrality[most_confident_solution]
+    # print(f"\nMost confident solution: {most_confident_solution}")
+    # print(f"Confidence score: {confidence:.4f}")
+    
+    return most_confident_solution, confidence
+
+
 @retry.retry(tries=3, delay=2)
-def sruq_confidence(query, train_set, openai_client, model, temperature, seed, demo_num=8):
+def sruq_confidence(query, train_set, openai_client, model, temperature, seed, num_prompts=5, demo_num=8):
     '''
     Given a query, generate a response along with the confidence score.
     The confidence score is calculated by a graph-based method.
     '''
-    return 
+    responses = []
+    costs = 0
+    for _ in range(num_prompts):
+        prompt, response, cost, _ = logprob_confidence(query, train_set, openai_client, model, temperature, seed, demo_num)
+        responses.append(response)
+        costs += cost
+    
+    most_confident_solution, confidence = graph(responses)
+
+    return prompt, most_confident_solution, costs, confidence
+
+
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--engine', type=str, default='claude-3-opus-20240229', help='api engine; https://openai.com/api/')
+    parser.add_argument('--engine', type=str, default='gpt-4o-mini', help='api engine; https://openai.com/api/')
     parser.add_argument('--seed', type=int, default=2024, help="seed for GPT-4 generation")
     args = parser.parse_args()
 
-    random.seed(args.seed)
-
+    ## load the API models
     with open("keys.json", "r") as f:
         keys = json.load(f)
     random.seed(args.seed)
@@ -152,8 +246,9 @@ if __name__ == "__main__":
             api_key=OAI_KEY
         )
 
+
     # Load the GSM8K dataset
-    train, test = load_gsm8k()
+    train, test = load_gsm8k(test_size=100)
     
     # experiment on testset 
     predictions = []
@@ -199,13 +294,40 @@ if __name__ == "__main__":
         costs += cost
 
     print ("Method: Ensemble Confidence")
-    print ("Predictions: ", predictions)
-    print ("Gold Answers: ", [test[i]["answer"] for i in range(len(test))])
-    print ("Accuracies: ", accuracies)
-    print ("Confidences: ", confidences)
+    # print ("Predictions: ", predictions)
+    # print ("Gold Answers: ", [test[i]["answer"] for i in range(len(test))])
+    # print ("Accuracies: ", accuracies)
+    # print ("Confidences: ", confidences)
     print ("Accuracy: ", sum(accuracies) / len(accuracies))
     print ("Brier Score: ", brier_score(accuracies, confidences))
     print ("Expected Calibration Error: ", expected_calibration_error(accuracies, confidences))
     print ("Total Cost: ", costs)
+    print ("----------------------------------------")
 
-   
+    # experiment on testset using SRUQ
+    predictions = []
+    confidences = []
+    accuracies = []
+    costs = 0
+    for i in tqdm(range(len(test))):
+        query = test[i]["question"]
+        gold_answer = test[i]["answer"]
+        prompt, response, cost, confidence = sruq_confidence(query, train, client, args.engine, temperature=0.7, seed=args.seed)
+        
+        accuracy = 1 if response == gold_answer else 0
+        accuracies.append(accuracy)
+        predictions.append(response)
+        confidences.append(confidence)
+        costs += cost
+
+    print ("Method: SRUQ Confidence")
+    # print ("Predictions: ", predictions)
+    # print ("Gold Answers: ", [test[i]["answer"] for i in range(len(test))])
+    # print ("Accuracies: ", accuracies)
+    # print ("Confidences: ", confidences)
+    print ("Accuracy: ", sum(accuracies) / len(accuracies))
+    print ("Brier Score: ", brier_score(accuracies, confidences))
+    print ("Expected Calibration Error: ", expected_calibration_error(accuracies, confidences))
+    print ("Total Cost: ", costs)
+    print ("----------------------------------------")
+
