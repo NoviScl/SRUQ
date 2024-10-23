@@ -20,8 +20,8 @@ Without CoT:
 | Method | Accuracy | Brier Score | Expected Calibration Error |
 |--------|----------|-------------|----------------------------|
 | Baseline | | | |
-| Ensemble Confidence | | | |
-| SRUQ Confidence | | | |
+| Ensemble | | | |
+| SRUQ | | | |
 
 With CoT:
 
@@ -49,3 +49,30 @@ With CoT:
 | Baseline | | | |
 | Ensemble | | | |
 | SRUQ | | | |
+
+
+## Ablation Study
+
+Model: GPT-4o-mini
+
+Dataset: GSM8K 
+
+With CoT:
+
+The impact of different centrality measures on the performance of SRUQ.
+
+| Method | Accuracy | Brier Score | Expected Calibration Error |
+|--------|----------|-------------|----------------------------|
+| Degree Centrality | | | |
+| Eigenvector Centrality | | | |
+| PageRank Centrality | | | |
+
+
+The impact of different similarity metrics on the performance of SRUQ.
+
+| Method | Accuracy | Brier Score | Expected Calibration Error |
+|--------|----------|-------------|----------------------------|
+| Character-Level Jaccard | | | |
+| Word-Level Jaccard | | | |
+| Sentence Embedding Cosine | | | |
+| LLM Judge | | | |
