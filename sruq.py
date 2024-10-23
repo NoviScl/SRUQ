@@ -248,7 +248,7 @@ if __name__ == "__main__":
 
 
     # Load the GSM8K dataset
-    train, test = load_gsm8k(test_size=100)
+    train, test = load_gsm8k(test_size=1500)
     
     # experiment on testset 
     predictions = []
