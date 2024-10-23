@@ -15,7 +15,7 @@ Model: GPT-4o-mini
 
 Dataset: GSM8K 
 
-Without CoT:
+Without CoT (using character-level Jaccard similarity and PageRank centrality for SRUQ):
 
 | Method | Accuracy | Brier Score | Expected Calibration Error |
 |--------|----------|-------------|----------------------------|
