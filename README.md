@@ -17,17 +17,17 @@ Dataset: GSM8K
 
 Without CoT (using character-level Jaccard similarity and PageRank centrality for SRUQ):
 
-| Method | Accuracy | Brier Score | Expected Calibration Error |
-|--------|----------|-------------|----------------------------|
-| Baseline | | | |
-| Ensemble | | | |
-| SRUQ | | | |
+| Method | Accuracy | Brier Score | Expected Calibration Error | Cost |
+|--------|----------|-------------|----------------------------|------|
+| Logprob | 31.54 | 0.2983 | 0.3324 | 0.12 |
+| Ensemble | 31.39 | 0.3299 | 0.3985 | 0.62 |
+| SRUQ | | | | |
 
 With CoT:
 
 | Method | Accuracy | Brier Score | Expected Calibration Error |
 |--------|----------|-------------|----------------------------|
-| Baseline | | | |
+| Logprob | | | |
 | Ensemble | | | |
 | SRUQ  | | | |
 
@@ -38,7 +38,7 @@ Without CoT:
 
 | Method | Accuracy | Brier Score | Expected Calibration Error |
 |--------|----------|-------------|----------------------------|
-| Baseline | | | |
+| Logprob | | | |
 | Ensemble | | | |
 | SRUQ | | | |
 
@@ -46,7 +46,7 @@ With CoT:
 
 | Method | Accuracy | Brier Score | Expected Calibration Error |
 |--------|----------|-------------|----------------------------|
-| Baseline | | | |
+| Logprob | | | |
 | Ensemble | | | |
 | SRUQ | | | |
 
