@@ -50,7 +50,10 @@ def answer_extractor(response, dataset="gsm8k"):
     '''
     if dataset == "gsm8k":
         response = response.split("####")[-1].strip()
-        response = str(int(float(response)))
+        try:
+            response = str(int(float(response)))
+        except:
+            response = response.strip()
     
     return response.strip()
     
@@ -172,11 +175,15 @@ def ensemble_confidence(dataset, query, train_set, openai_client, model, tempera
     return prompt, most_common_response, costs, confidence
 
 
-def graph(solutions, metric="jaccard", centrality="eigenvector"):
+def graph(solutions, metric="word_jaccard", centrality="eigenvector", CoT=False):
     # Create a similarity matrix (symmetric matrix with pairwise similarity weights)
     n = len(solutions)
     similarity_matrix = np.zeros((n, n))
 
+    # For CoT, we'll keep both full solutions for similarity and extracted answers for frequency
+    if CoT:
+        extracted_answers = [answer_extractor(sol, "gsm8k") for sol in solutions]
+    
     for i in range(n):
         for j in range(i, n):
             if i == j:
@@ -186,9 +193,6 @@ def graph(solutions, metric="jaccard", centrality="eigenvector"):
                 similarity_matrix[i][j] = similarity
                 similarity_matrix[j][i] = similarity  # Ensure symmetry
 
-    # print ("solutions: ", solutions)
-    # print ("similarity matrix: ", similarity_matrix)
-    
     # Create a graph
     G = nx.Graph()
 
@@ -203,13 +207,23 @@ def graph(solutions, metric="jaccard", centrality="eigenvector"):
     elif centrality == "pagerank":
         centrality = nx.pagerank(G, weight='weight')
     
-    # Sum up centrality for identical solutions
+    # Sum up centrality for identical solutions, using extracted answers for CoT
     unique_solutions = {}
-    for solution, score in centrality.items():
-        if solution in unique_solutions:
-            unique_solutions[solution] += score
-        else:
-            unique_solutions[solution] = score
+    if CoT:
+        # Map full solutions to their extracted answers
+        solution_to_answer = dict(zip(solutions, extracted_answers))
+        for solution, score in centrality.items():
+            answer = solution_to_answer[solution]
+            if answer in unique_solutions:
+                unique_solutions[answer] += score
+            else:
+                unique_solutions[answer] = score
+    else:
+        for solution, score in centrality.items():
+            if solution in unique_solutions:
+                unique_solutions[solution] += score
+            else:
+                unique_solutions[solution] = score
     
     # Normalize the confidence scores
     total_score = sum(unique_solutions.values())
@@ -218,39 +232,41 @@ def graph(solutions, metric="jaccard", centrality="eigenvector"):
     # Update the centrality dictionary with normalized scores
     centrality = normalized_centrality
 
-    # # Print the centrality of each solution
-    # print("Centrality (Confidence Estimation):")
-    # for solution, score in centrality.items():
-    #     print(f"{solution}: {score:.4f}")
-
     # Find the most confident solution (highest centrality) and its confidence
-    most_confident_solution = max(centrality, key=centrality.get)
-    confidence = centrality[most_confident_solution]
-    # print(f"\nMost confident solution: {most_confident_solution}")
-    # print(f"Confidence score: {confidence:.4f}")
+    most_confident_answer = max(centrality, key=centrality.get)
+    confidence = centrality[most_confident_answer]
     
-    return most_confident_solution, confidence
+    # sanity check by printing the centrality of each solution
+    for solution, score in centrality.items():
+        print(f"{solution}: {score:.4f}")
+    print ("----------------------------------------")
+    
+    return most_confident_answer, confidence
 
 
 @retry.retry(tries=3, delay=2)
-def sruq_confidence(dataset, query, train_set, openai_client, model, temperature, seed, num_prompts=5, CoT=False, demo_num=8):
+def sruq_confidence(dataset, query, train_set, openai_client, model, temperature, seed, num_prompts=5, CoT=False, demo_num=8, similarity_metric="char_jaccard", centrality="eigenvector"):
     '''
     Given a query, generate a response along with the confidence score.
     The confidence score is calculated by a graph-based method.
     '''
     responses = []
     costs = 0
+    if CoT:
+        extract_answer = False
+    else:
+        extract_answer = True
     for _ in range(num_prompts):
-        prompt, response, cost, _ = logprob_confidence(dataset, query, train_set, openai_client, model, temperature, seed, CoT, demo_num, extract_answer=False)
+        prompt, response, cost, _ = logprob_confidence(dataset, query, train_set, openai_client, model, temperature, seed, CoT, demo_num, extract_answer=extract_answer)
         responses.append(response)
         costs += cost
     
-    most_confident_solution, confidence = graph(responses)
+    most_confident_solution, confidence = graph(responses, similarity_metric, centrality, CoT)
 
     return prompt, most_confident_solution, costs, confidence
 
 
-def experiment(client, test_size=100, dataset="gsm8k", CoT=False, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=2024, num_prompts=5, demo_num=8):
+def experiment(client, test_size=100, dataset="gsm8k", CoT=False, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=2024, num_prompts=5, demo_num=8, similarity_metric="word_jaccard", centrality="eigenvector"):
     '''
     Run the experiment on the given dataset.
     '''
@@ -270,7 +286,7 @@ def experiment(client, test_size=100, dataset="gsm8k", CoT=False, method="logpro
         elif method == "ensemble":
             prompt, response, cost, confidence = ensemble_confidence(dataset, query, train, client, engine, temperature=temperature, seed=seed, num_prompts=num_prompts, CoT=CoT, demo_num=demo_num)
         elif method == "sruq":
-            prompt, response, cost, confidence = sruq_confidence(query, train, client, engine, temperature=temperature, seed=seed, num_prompts=num_prompts, demo_num=demo_num)
+            prompt, response, cost, confidence = sruq_confidence(dataset, query, train, client, engine, temperature=temperature, seed=seed, num_prompts=num_prompts, CoT=CoT, demo_num=demo_num, similarity_metric=similarity_metric, centrality=centrality)
 
         response = answer_extractor(response, dataset)
         accuracy = 1 if response == gold_answer else 0
@@ -316,18 +332,29 @@ if __name__ == "__main__":
 
     
     # # Experiment with logprob confidence
-    print ("gsm8k; logprob; no CoT")
-    experiment(client, test_size=1500, dataset="gsm8k", CoT=False, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8)
+    # print ("gsm8k; logprob; no CoT")
+    # experiment(client, test_size=1500, dataset="gsm8k", CoT=False, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8)
 
-    print ("gsm8k; logprob; CoT")
-    experiment(client, test_size=1500, dataset="gsm8k", CoT=True, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8)
+    # print ("gsm8k; logprob; CoT")
+    # experiment(client, test_size=1500, dataset="gsm8k", CoT=True, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8)
 
     # # Experiment with ensemble confidence
-    print ("gsm8k; ensemble; no CoT")
-    experiment(client, test_size=1500, dataset="gsm8k", CoT=False, method="ensemble", engine="gpt-4o-mini", temperature=0.7, seed=2024, num_prompts=5, demo_num=8)
+    # print ("gsm8k; ensemble; no CoT")
+    # experiment(client, test_size=1500, dataset="gsm8k", CoT=False, method="ensemble", engine="gpt-4o-mini", temperature=0.7, seed=2024, num_prompts=5, demo_num=8)
 
-    print ("gsm8k; ensemble; CoT")
-    experiment(client, test_size=1500, dataset="gsm8k", CoT=True, method="ensemble", engine="gpt-4o-mini", temperature=0.7, seed=2024, num_prompts=5, demo_num=8)
+    # print ("gsm8k; ensemble; CoT")
+    # experiment(client, test_size=1500, dataset="gsm8k", CoT=True, method="ensemble", engine="gpt-4o-mini", temperature=0.7, seed=2024, num_prompts=5, demo_num=8)
 
-    # Experiment with SRUQ confidence
-    # experiment(client, test_size=10, dataset="gsm8k", CoT=True, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8)
+    # # Experiment with SRUQ confidence
+    print ("gsm8k; sruq; no CoT; char_jaccard; eigenvector")
+    experiment(client, test_size=1500, dataset="gsm8k", CoT=False, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8, similarity_metric="char_jaccard", centrality="eigenvector")
+
+    print ("gsm8k; sruq; no CoT; char_jaccard; pagerank")
+    experiment(client, test_size=1500, dataset="gsm8k", CoT=False, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8, similarity_metric="char_jaccard", centrality="pagerank")
+
+    print ("gsm8k; sruq; no CoT; word_jaccard; eigenvector")
+    experiment(client, test_size=1500, dataset="gsm8k", CoT=False, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8, similarity_metric="word_jaccard", centrality="eigenvector")
+
+    print ("gsm8k; sruq; no CoT; word_jaccard; pagerank")
+    experiment(client, test_size=1500, dataset="gsm8k", CoT=False, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8, similarity_metric="word_jaccard", centrality="pagerank")
+
