@@ -35,7 +35,7 @@ def load_gsm8k(test_size=100, CoT=False):
         if CoT:
             train[i]["answer"] = train[i]["answer"].strip()
         else:
-            train[i]["answer"] = train[i]["answer"].split("####")[0].strip()
+            train[i]["answer"] = train[i]["answer"].split("####")[-1].strip()
     for i in range(len(test)):
         test[i]["answer"] = test[i]["answer"].split("####")[-1].strip()
     print ("Train split size: ", len(train))
@@ -316,9 +316,17 @@ if __name__ == "__main__":
 
     
     # # Experiment with logprob confidence
+    print ("gsm8k; logprob; no CoT")
+    experiment(client, test_size=1500, dataset="gsm8k", CoT=False, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8)
+
+    print ("gsm8k; logprob; CoT")
     experiment(client, test_size=1500, dataset="gsm8k", CoT=True, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=2024, demo_num=8)
 
     # # Experiment with ensemble confidence
+    print ("gsm8k; ensemble; no CoT")
+    experiment(client, test_size=1500, dataset="gsm8k", CoT=False, method="ensemble", engine="gpt-4o-mini", temperature=0.7, seed=2024, num_prompts=5, demo_num=8)
+
+    print ("gsm8k; ensemble; CoT")
     experiment(client, test_size=1500, dataset="gsm8k", CoT=True, method="ensemble", engine="gpt-4o-mini", temperature=0.7, seed=2024, num_prompts=5, demo_num=8)
 
     # Experiment with SRUQ confidence
