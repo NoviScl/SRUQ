@@ -9,70 +9,28 @@ pip install -r requirements.txt
 bash run.sh 
 ```
 
-## Results 
+## Original Idea
 
-Model: GPT-4o-mini
+See this document for the idea input along with my proposed modifications: [idea doc](https://docs.google.com/document/d/1SzdD6CPYpT_4yQaCeT1xFLA56PrLr2W8EwFNmTlnsX4/edit?usp=sharing). 
 
-Dataset: GSM8K 
+## Main Results 
 
-Without CoT (using character-level Jaccard similarity and PageRank centrality for SRUQ):
+Few-shot CoT prompting on GSM8K with GPT-4o-mini:
 
-| Method | Accuracy | Brier Score | Expected Calibration Error | Cost |
-|--------|----------|-------------|----------------------------|------|
-| Logprob | 31.54 | 0.2983 | 0.3324 | 0.12 |
-| Ensemble | 31.39 | 0.3299 | 0.3985 | 0.62 |
-| SRUQ | | | | |
+| Method | Accuracy | Brier Score | Expected Calibration Error | AUC | Cost |
+|--------|----------|-------------|----------------------------|------|------|
+| Logprob | 90.1 | 0.090 | 0.060 | 93.8 | 0.48 | 
+| Ensemble | 92.9 | 0.054 | 0.041 | 95.7 | 2.39 |
+| SRUQ (Proposed) | 92.7| 0.056 | 0.038 | 97.2 | 2.38 |   
 
-With CoT:
+Few-shot CoT prompting on StrategyQA with GPT-4o-mini:
 
-| Method | Accuracy | Brier Score | Expected Calibration Error |
-|--------|----------|-------------|----------------------------|
-| Logprob | | | |
-| Ensemble | | | |
-| SRUQ  | | | |
+| Method | Accuracy | Brier Score | Expected Calibration Error | AUC | Cost |
+|--------|----------|-------------|----------------------------|------|------|
+| Logprob | 83.5 | 0.154 | 0.127 | 89.3 | 0.54 |
+| Ensemble | 83.7 | 0.142 | 0.126 | 86.8 | 2.72 |
+| SRUQ  | 84.1 | 0.142 | 0.128 | 87.1 | 2.72 |
 
+## Full Report 
 
-Dataset: HotpotQA
-
-Without CoT:
-
-| Method | Accuracy | Brier Score | Expected Calibration Error |
-|--------|----------|-------------|----------------------------|
-| Logprob | | | |
-| Ensemble | | | |
-| SRUQ | | | |
-
-With CoT:
-
-| Method | Accuracy | Brier Score | Expected Calibration Error |
-|--------|----------|-------------|----------------------------|
-| Logprob | | | |
-| Ensemble | | | |
-| SRUQ | | | |
-
-
-## Ablation Study
-
-Model: GPT-4o-mini
-
-Dataset: GSM8K 
-
-With CoT:
-
-The impact of different centrality measures on the performance of SRUQ.
-
-| Method | Accuracy | Brier Score | Expected Calibration Error |
-|--------|----------|-------------|----------------------------|
-| Degree Centrality | | | |
-| Eigenvector Centrality | | | |
-| PageRank Centrality | | | |
-
-
-The impact of different similarity metrics on the performance of SRUQ.
-
-| Method | Accuracy | Brier Score | Expected Calibration Error |
-|--------|----------|-------------|----------------------------|
-| Character-Level Jaccard | | | |
-| Word-Level Jaccard | | | |
-| Sentence Embedding Cosine | | | |
-| LLM Judge | | | |
+Read the [full report](https://www.overleaf.com/read/jswkzmpmhwfn#fd1147). 
