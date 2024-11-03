@@ -434,15 +434,18 @@ if __name__ == "__main__":
 
     model = SentenceTransformer("all-MiniLM-L6-v2")
 
-    accuracies, confidences = experiment(client, test_size=3000, dataset="gsm8k", CoT=True, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, similarity_metric="embedding", centrality="pagerank", cache_file="predictions/gsm8k_sruq_CoT_embedding_pagerank.json", embedding_model=model)
+
+
     print ("gsm8k; SRUQ; embedding; pagerank; CoT; 5 samples")
+    accuracies, confidences = experiment(client, test_size=3000, dataset="gsm8k", CoT=True, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, similarity_metric="embedding", centrality="pagerank", cache_file="predictions/gsm8k_sruq_CoT_embedding_pagerank.json", embedding_model=model)
     print ("AUC: ", compute_auc(accuracies, confidences))
     print ("----------------------------------------\n")
 
-    # accuracies, confidences = experiment(client, test_size=3000, dataset="stratqa", CoT=True, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, similarity_metric="word_jaccard", centrality="eigenvector", cache_file="predictions/stratqa_sruq_CoT_word_eigenvector.json")
-    # print ("stratqa; SRUQ; word_jaccard; eigenvector; CoT; 5 samples")
-    # print ("AUC: ", compute_auc(accuracies, confidences))
-    # print ("----------------------------------------\n")
+
+    print ("stratqa; SRUQ; embedding; pagerank; CoT; 5 samples")
+    accuracies, confidences = experiment(client, test_size=3000, dataset="stratqa", CoT=True, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=6, similarity_metric="embedding", centrality="pagerank", cache_file="predictions/stratqa_sruq_CoT_embedding_pagerank.json", embedding_model=model)
+    print ("AUC: ", compute_auc(accuracies, confidences))
+    print ("----------------------------------------\n")
 
     
     
