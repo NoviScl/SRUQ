@@ -17,7 +17,7 @@ See this document for the idea input along with my proposed modifications: [idea
 
 Few-shot CoT prompting on GSM8K with GPT-4o-mini:
 
-| Method | Accuracy | Brier Score | Expected Calibration Error | AUC | Cost |
+| Method | Accuracy | Brier Score | ECE | AUC | Cost |
 |--------|----------|-------------|----------------------------|------|------|
 | Logprob | 90.1 | 0.090 | 0.060 | 93.8 | 0.48 | 
 | Ensemble | 92.9 | 0.054 | 0.041 | 95.7 | 2.39 |
@@ -25,11 +25,11 @@ Few-shot CoT prompting on GSM8K with GPT-4o-mini:
 
 Few-shot CoT prompting on StrategyQA with GPT-4o-mini:
 
-| Method | Accuracy | Brier Score | Expected Calibration Error | AUC | Cost |
+| Method | Accuracy | Brier Score | ECE | AUC | Cost |
 |--------|----------|-------------|----------------------------|------|------|
 | Logprob | 83.5 | 0.154 | 0.127 | 89.3 | 0.54 |
 | Ensemble | 83.7 | 0.142 | 0.126 | 86.8 | 2.72 |
-| SRUQ  | 84.1 | 0.142 | 0.128 | 87.1 | 2.72 |
+| SRUQ (Proposed) | 84.1 | 0.142 | 0.128 | 87.1 | 2.72 |
 
 ## Full Report 
 
