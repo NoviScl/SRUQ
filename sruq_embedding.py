@@ -12,6 +12,8 @@ from datasets import load_dataset
 import networkx as nx
 from sklearn.metrics import auc
 import ast
+from sentence_transformers import SentenceTransformer
+
 
 
 def softmax(x):
@@ -132,7 +134,7 @@ def expected_calibration_error(accuracy_lst, confidence_lst, n_bins=10):
     return ece
 
 
-def pairwise_similarity(solution_a, solution_b, metric="char_jaccard"):
+def pairwise_similarity(solution_a, solution_b, metric="char_jaccard", embedding_model=None):
     '''
     Compute the pairwise similarity between two solutions.
     We can try various metrics to compute the similarity.
@@ -146,6 +148,14 @@ def pairwise_similarity(solution_a, solution_b, metric="char_jaccard"):
         solution_a = solution_a.split()
         solution_b = solution_b.split()
         similarity = len(set(solution_a).intersection(set(solution_b))) / len(set(solution_a).union(set(solution_b)))
+    elif metric == "embedding":
+        if embedding_model is None:
+            raise ValueError("embedding_model is not provided")
+        embeddings_a = embedding_model.encode(solution_a)
+        embeddings_b = embedding_model.encode(solution_b)
+        similarities = embedding_model.similarity(embeddings_a, embeddings_b)
+        similarities = float(similarities[0][0])  # Extract number from tensor
+        
     
     return similarity
 
@@ -252,7 +262,7 @@ def ensemble_confidence(dataset, query, train_set, openai_client, model, tempera
     return prompt, most_common_response, costs, confidence
 
 
-def graph(solutions, dataset="gsm8k", metric="word_jaccard", centrality="eigenvector", CoT=False):
+def graph(solutions, dataset="gsm8k", metric="word_jaccard", centrality="eigenvector", CoT=False, embedding_model=None):
     # Create a similarity matrix (symmetric matrix with pairwise similarity weights)
     n = len(solutions)
     similarity_matrix = np.zeros((n, n))
@@ -266,7 +276,7 @@ def graph(solutions, dataset="gsm8k", metric="word_jaccard", centrality="eigenve
             if i == j:
                 similarity_matrix[i][j] = 1.0  # Self-similarity is always 1
             else:
-                similarity = pairwise_similarity(solutions[i], solutions[j], metric)
+                similarity = pairwise_similarity(solutions[i], solutions[j], metric, embedding_model)
                 similarity_matrix[i][j] = similarity
                 similarity_matrix[j][i] = similarity  # Ensure symmetry
 
@@ -322,7 +332,7 @@ def graph(solutions, dataset="gsm8k", metric="word_jaccard", centrality="eigenve
 
 
 @retry.retry(tries=3, delay=2)
-def sruq_confidence(dataset, query, train_set, openai_client, model, temperature, seed, num_prompts=5, CoT=False, demo_num=8, similarity_metric="char_jaccard", centrality="eigenvector"):
+def sruq_confidence(dataset, query, train_set, openai_client, model, temperature, seed, num_prompts=5, CoT=False, demo_num=8, similarity_metric="char_jaccard", centrality="eigenvector", embedding_model=None):
     '''
     Given a query, generate a response along with the confidence score.
     The confidence score is calculated by a graph-based method.
@@ -338,12 +348,12 @@ def sruq_confidence(dataset, query, train_set, openai_client, model, temperature
         responses.append(response)
         costs += cost
     
-    most_confident_solution, confidence = graph(responses, dataset, similarity_metric, centrality, CoT)
+    most_confident_solution, confidence = graph(responses, dataset, similarity_metric, centrality, CoT, embedding_model)
 
     return prompt, most_confident_solution, costs, confidence
 
 
-def experiment(client, test_size=100, dataset="gsm8k", CoT=False, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=2024, num_prompts=5, demo_num=8, similarity_metric="word_jaccard", centrality="eigenvector", cache_file="predictions/gsm8k_logprob_noCoT.json"):
+def experiment(client, test_size=100, dataset="gsm8k", CoT=False, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=2024, num_prompts=5, demo_num=8, similarity_metric="word_jaccard", centrality="eigenvector", cache_file="predictions/gsm8k_logprob_noCoT.json", embedding_model=None):
     '''
     Run the experiment on the given dataset.
     '''
@@ -365,7 +375,7 @@ def experiment(client, test_size=100, dataset="gsm8k", CoT=False, method="logpro
         elif method == "ensemble":
             prompt, response, cost, confidence = ensemble_confidence(dataset, query, train, client, engine, temperature=temperature, seed=seed, num_prompts=num_prompts, CoT=CoT, demo_num=demo_num)
         elif method == "sruq":
-            prompt, response, cost, confidence = sruq_confidence(dataset, query, train, client, engine, temperature=temperature, seed=seed, num_prompts=num_prompts, CoT=CoT, demo_num=demo_num, similarity_metric=similarity_metric, centrality=centrality)
+            prompt, response, cost, confidence = sruq_confidence(dataset, query, train, client, engine, temperature=temperature, seed=seed, num_prompts=num_prompts, CoT=CoT, demo_num=demo_num, similarity_metric=similarity_metric, centrality=centrality, embedding_model=embedding_model)
 
 
         # print ("prompt: ", prompt)
@@ -422,67 +432,17 @@ if __name__ == "__main__":
             api_key=OAI_KEY
         )
 
+    model = SentenceTransformer("all-MiniLM-L6-v2")
 
-    ## GSM8K experiments; Table 1 
-    print ("gsm8k; logprob; no CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="gsm8k", CoT=False, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, cache_file="predictions/gsm8k_logprob_noCoT.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
-
-    print ("gsm8k; ensemble; no CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="gsm8k", CoT=False, method="ensemble", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, cache_file="predictions/gsm8k_ensemble_noCoT.json")
+    accuracies, confidences = experiment(client, test_size=3000, dataset="gsm8k", CoT=True, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, similarity_metric="embedding", centrality="pagerank", cache_file="predictions/gsm8k_sruq_CoT_embedding_pagerank.json", embedding_model=model)
+    print ("gsm8k; SRUQ; embedding; pagerank; CoT; 5 samples")
     print ("AUC: ", compute_auc(accuracies, confidences))
     print ("----------------------------------------\n")
 
-    print ("gsm8k; SRUQ; char_jaccard; pagerank; no CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="gsm8k", CoT=False, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, similarity_metric="char_jaccard", centrality="pagerank", cache_file="predictions/gsm8k_sruq_noCoT_char_pagerank.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
-
-    print ("gsm8k; logprob; CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="gsm8k", CoT=True, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, cache_file="predictions/gsm8k_logprob_CoT.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
-
-    print ("gsm8k; ensemble; CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="gsm8k", CoT=True, method="ensemble", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, cache_file="predictions/gsm8k_ensemble_CoT.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
-    
-    print ("gsm8k; SRUQ; word_jaccard; pagerank; CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="gsm8k", CoT=True, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, similarity_metric="word_jaccard", centrality="pagerank", cache_file="predictions/gsm8k_sruq_CoT_word_pagerank.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
+    # accuracies, confidences = experiment(client, test_size=3000, dataset="stratqa", CoT=True, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, similarity_metric="word_jaccard", centrality="eigenvector", cache_file="predictions/stratqa_sruq_CoT_word_eigenvector.json")
+    # print ("stratqa; SRUQ; word_jaccard; eigenvector; CoT; 5 samples")
+    # print ("AUC: ", compute_auc(accuracies, confidences))
+    # print ("----------------------------------------\n")
 
     
-    ## StratQA experiments; Table 1
-    print ("stratqa; logprob; no CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="stratqa", CoT=False, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, cache_file="predictions/stratqa_logprob_noCoT.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
-
-    print ("stratqa; ensemble; no CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="stratqa", CoT=False, method="ensemble", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, cache_file="predictions/stratqa_ensemble_noCoT.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
-
-    print ("stratqa; SRUQ; char_jaccard; pagerank; no CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="stratqa", CoT=False, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, similarity_metric="char_jaccard", centrality="pagerank", cache_file="predictions/stratqa_sruq_noCoT_char_pagerank.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
-
-    print ("stratqa; logprob; CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="stratqa", CoT=True, method="logprob", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, cache_file="predictions/stratqa_logprob_CoT.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
-
-    print ("stratqa; ensemble; CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="stratqa", CoT=True, method="ensemble", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, cache_file="predictions/stratqa_ensemble_CoT.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
-    
-    print ("stratqa; SRUQ; word_jaccard; pagerank; CoT; 5 samples")
-    accuracies, confidences = experiment(client, test_size=3000, dataset="stratqa", CoT=True, method="sruq", engine="gpt-4o-mini", temperature=0.7, seed=args.seed, num_prompts=5, demo_num=8, similarity_metric="word_jaccard", centrality="pagerank", cache_file="predictions/stratqa_sruq_CoT_word_pagerank.json")
-    print ("AUC: ", compute_auc(accuracies, confidences))
-    print ("----------------------------------------\n")
     
